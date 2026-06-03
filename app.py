@@ -5,8 +5,39 @@ import requests
 import streamlit as st
 from babel.languages import get_official_languages
 from babel.numbers import format_compact_currency
+from pathlib import Path
 
 st.set_page_config(layout="wide")
+
+WID_DATA_DIR = Path(__file__).resolve().parent / "wid_all_data"
+WID_GITHUB_MEDIA = (
+    "https://media.githubusercontent.com/media/"
+    "devxpy/wid_income_chart/main/wid_all_data"
+)
+LFS_POINTER_PREFIX = b"version https://git-lfs.github.com/spec/v1"
+
+
+def _is_lfs_pointer(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    with path.open("rb") as f:
+        return f.read(len(LFS_POINTER_PREFIX)) == LFS_POINTER_PREFIX
+
+
+def _download_wid_csv(filename: str) -> None:
+    WID_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path = WID_DATA_DIR / filename
+    response = requests.get(f"{WID_GITHUB_MEDIA}/{filename}", timeout=300)
+    response.raise_for_status()
+    path.write_bytes(response.content)
+
+
+@st.cache_data(show_spinner="Loading WID data...")
+def read_wid_csv(filename: str, **read_csv_kwargs) -> pd.DataFrame:
+    path = WID_DATA_DIR / filename
+    if not path.is_file() or _is_lfs_pointer(path):
+        _download_wid_csv(filename)
+    return pd.read_csv(path, **read_csv_kwargs)
 
 
 def main():
@@ -138,13 +169,13 @@ def main():
 
 def load_countries():
     """Load the countries data from CSV."""
-    return pd.read_csv("wid_all_data/WID_countries.csv", sep=";")
+    return read_wid_csv("WID_countries.csv", sep=";")
 
 
 def load_country_data(country_code):
     """Load country-specific data and metadata."""
-    df = pd.read_csv(f"wid_all_data/WID_data_{country_code}.csv", sep=";")
-    meta = pd.read_csv(f"wid_all_data/WID_metadata_{country_code}.csv", sep=";")
+    df = read_wid_csv(f"WID_data_{country_code}.csv", sep=";")
+    meta = read_wid_csv(f"WID_metadata_{country_code}.csv", sep=";")
     return df, meta
 
 
